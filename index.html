@@ -73,6 +73,10 @@
                 <button id="reset-btn" class="hidden text-xs text-rose-600 hover:text-rose-800 font-semibold px-3 py-1.5 rounded-lg border border-rose-200 hover:bg-rose-50 transition-colors flex items-center gap-1.5">
                     <i class="fa-solid fa-trash"></i> Limpar Tudo
                 </button>
+                <!-- Botão/Aba Filtro -->
+                <a href="https://nfsleituraparagem-bot.github.io/FIltroXML/" target="_blank" class="text-xs font-semibold px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-sm transition-colors flex items-center gap-1.5">
+                    <i class="fa-solid fa-filter"></i> Filtro
+                </a>
             </div>
         </div>
     </header>
@@ -516,9 +520,7 @@
 
             const citiesSet = new Set();
             invoicesData.forEach(inv => {
-                if (inv.endereco) {
-                    citiesSet.add(inv.endereco);
-                }
+                if (inv.endereco) citiesSet.add(inv.endereco);
             });
 
             Array.from(citiesSet).sort().forEach(city => {
@@ -533,20 +535,14 @@
 
         function updateUIState() {
             const hasData = invoicesData.length > 0;
-            
-            document.getElementById('empty-state').classList.toggle('hidden', hasData);
             document.getElementById('filter-section').classList.toggle('hidden', !hasData);
             document.getElementById('header-section').classList.toggle('hidden', !hasData);
             document.getElementById('ncm-table-section').classList.toggle('hidden', !hasData);
+            document.getElementById('empty-state').classList.toggle('hidden', hasData);
+
+            document.getElementById('file-counter').classList.toggle('hidden', !hasData);
             document.getElementById('reset-btn').classList.toggle('hidden', !hasData);
-            
-            const counter = document.getElementById('file-counter');
-            if (hasData) {
-                counter.classList.remove('hidden');
-                document.getElementById('file-counter-text').textContent = `${invoicesData.length} nota(s) carregada(s)`;
-            } else {
-                counter.classList.add('hidden');
-            }
+            document.getElementById('file-counter-text').textContent = `${invoicesData.length} nota(s)`;
         }
 
         function updateDashboard() {
@@ -554,245 +550,193 @@
 
             const dateFrom = document.getElementById('filter-date-from').value;
             const dateTo = document.getElementById('filter-date-to').value;
-            const selectedCity = document.getElementById('filter-city').value.toLowerCase();
-            const searchVal = document.getElementById('filter-search').value.toLowerCase().trim();
-            const ncmVal = document.getElementById('filter-ncm').value.replaceAll('.', '').trim();
+            const selectedCity = document.getElementById('filter-city').value;
+            const searchTerm = document.getElementById('filter-search').value.toLowerCase().trim();
+            const ncmTerm = document.getElementById('filter-ncm').value.toLowerCase().trim();
 
-            // 1. Filter Invoices
             const filteredInvoices = invoicesData.filter(inv => {
                 if (dateFrom && inv.isoDate && inv.isoDate < dateFrom) return false;
                 if (dateTo && inv.isoDate && inv.isoDate > dateTo) return false;
-                if (selectedCity && (!inv.endereco || !inv.endereco.toLowerCase().includes(selectedCity))) return false;
+                if (selectedCity && inv.endereco !== selectedCity) return false;
 
-                if (searchVal) {
-                    const matchForn = inv.fornecedor.toLowerCase().includes(searchVal);
-                    const matchNF = inv.nNF.toLowerCase().includes(searchVal);
-                    const matchCnpj = inv.cnpj && inv.cnpj.toLowerCase().includes(searchVal);
-                    if (!matchForn && !matchNF && !matchCnpj) return false;
+                if (searchTerm) {
+                    const matchForn = inv.fornecedor.toLowerCase().includes(searchTerm);
+                    const matchNF = inv.nNF.toLowerCase().includes(searchTerm);
+                    const matchCNPJ = inv.cnpj ? inv.cnpj.toLowerCase().includes(searchTerm) : false;
+                    if (!matchForn && !matchNF && !matchCNPJ) return false;
+                }
+
+                if (ncmTerm) {
+                    const hasNcm = inv.items.some(item => item.ncm.toLowerCase().includes(ncmTerm));
+                    if (!hasNcm) return false;
                 }
 
                 return true;
             });
 
-            // 2. Aggregate Totals and Group Items by NCM
-            const consolidatedTotals = {
-                vBC: 0, vICMS: 0, vBCST: 0, vST: 0, vIPI: 0, vProd: 0, vNF: 0
-            };
+            const noResults = filteredInvoices.length === 0;
+            document.getElementById('no-results-state').classList.toggle('hidden', !noResults);
+            document.getElementById('header-section').classList.toggle('hidden', noResults);
+            document.getElementById('ncm-table-section').classList.toggle('hidden', noResults);
 
-            filteredInvoices.forEach(inv => {
-                consolidatedTotals.vBC += inv.totals.vBC;
-                consolidatedTotals.vICMS += inv.totals.vICMS;
-                consolidatedTotals.vBCST += inv.totals.vBCST;
-                consolidatedTotals.vST += inv.totals.vST;
-                consolidatedTotals.vIPI += inv.totals.vIPI;
-                consolidatedTotals.vProd += inv.totals.vProd;
-                consolidatedTotals.vNF += inv.totals.vNF;
-            });
+            document.getElementById('filter-matches-text').innerHTML = `Exibindo dados de <strong class="text-slate-800">${filteredInvoices.length}</strong> de ${invoicesData.length} nota(s) fiscal(is).`;
 
-            const ncmGroups = {};
-            let totalMatchingItemsCount = 0;
+            if (noResults) return;
 
-            filteredInvoices.forEach(inv => {
-                inv.items.forEach(item => {
-                    const cleanNCM = item.ncm.replaceAll('.', '');
-                    if (ncmVal && !cleanNCM.includes(ncmVal)) {
-                        return;
-                    }
+            // Update Totals Card
+            const tot = filteredInvoices.reduce((acc, inv) => {
+                acc.vBC += inv.totals.vBC;
+                acc.vICMS += inv.totals.vICMS;
+                acc.vBCST += inv.totals.vBCST;
+                acc.vST += inv.totals.vST;
+                acc.vIPI += inv.totals.vIPI;
+                acc.vProd += inv.totals.vProd;
+                acc.vNF += inv.totals.vNF;
+                return acc;
+            }, { vBC: 0, vICMS: 0, vBCST: 0, vST: 0, vIPI: 0, vProd: 0, vNF: 0 });
 
-                    totalMatchingItemsCount++;
+            document.getElementById('tot-bc-icms').textContent = formatBRL(tot.vBC);
+            document.getElementById('tot-v-icms').textContent = formatBRL(tot.vICMS);
+            document.getElementById('tot-bc-st').textContent = formatBRL(tot.vBCST);
+            document.getElementById('tot-v-st').textContent = formatBRL(tot.vST);
+            document.getElementById('tot-v-ipi').textContent = formatBRL(tot.vIPI);
+            document.getElementById('tot-v-prod').textContent = formatBRL(tot.vProd);
+            document.getElementById('tot-v-nf').textContent = formatBRL(tot.vNF);
 
-                    if (!ncmGroups[item.ncm]) {
-                        ncmGroups[item.ncm] = {
-                            ncm: item.ncm,
-                            totalValue: 0,
-                            totalIpiValue: 0,
-                            icmsRatesSet: new Set(),
-                            items: []
-                        };
-                    }
-
-                    const group = ncmGroups[item.ncm];
-                    group.totalValue += item.vProd;
-                    group.totalIpiValue += item.vIPI;
-                    group.icmsRatesSet.add(item.pICMS);
-                    group.items.push(item);
-                });
-            });
-
-            const ncmGroupList = Object.values(ncmGroups);
-
-            // Update top totals display
-            document.getElementById('tot-bc-icms').textContent = formatBRL(consolidatedTotals.vBC);
-            document.getElementById('tot-v-icms').textContent = formatBRL(consolidatedTotals.vICMS);
-            document.getElementById('tot-bc-st').textContent = formatBRL(consolidatedTotals.vBCST);
-            document.getElementById('tot-v-st').textContent = formatBRL(consolidatedTotals.vST);
-            document.getElementById('tot-v-ipi').textContent = formatBRL(consolidatedTotals.vIPI);
-            document.getElementById('tot-v-prod').textContent = formatBRL(consolidatedTotals.vProd);
-            document.getElementById('tot-v-nf').textContent = formatBRL(consolidatedTotals.vNF);
-
-            // Update included invoices list table
+            // Update Invoice List Accordion
+            document.getElementById('invoice-list-count').textContent = filteredInvoices.length;
             const invoiceTableBody = document.getElementById('invoice-list-table-body');
             invoiceTableBody.innerHTML = '';
-            document.getElementById('invoice-list-count').textContent = filteredInvoices.length;
 
             filteredInvoices.forEach(inv => {
                 const tr = document.createElement('tr');
-                tr.className = 'hover:bg-slate-50/50';
+                tr.className = 'hover:bg-slate-50';
                 tr.innerHTML = `
-                    <td class="py-2 px-2 font-medium text-slate-800">${inv.nNF || '-'} <span class="text-slate-400 font-normal">(${inv.serie || '0'})</span></td>
+                    <td class="py-2 px-2 font-medium text-slate-900">NF ${inv.nNF} <span class="text-slate-400 font-normal">(${inv.serie || '1'})</span></td>
                     <td class="py-2 px-2 text-slate-600">${inv.dhEmi}</td>
-                    <td class="py-2 px-2 text-slate-700 truncate max-w-xs" title="${inv.fornecedor} (${inv.endereco})">${inv.fornecedor} <span class="text-slate-400 text-[11px]">(${inv.endereco})</span></td>
-                    <td class="py-2 px-2 text-right font-medium text-slate-800">${formatBRL(inv.totals.vNF)}</td>
+                    <td class="py-2 px-2 text-slate-700">${inv.fornecedor} <span class="text-slate-400">(${inv.endereco})</span></td>
+                    <td class="py-2 px-2 text-right font-semibold text-slate-900">${formatBRL(inv.totals.vNF)}</td>
                 `;
                 invoiceTableBody.appendChild(tr);
             });
 
-            // Render NCM Table Body with Checkboxes
+            // Aggregate items by NCM
+            const ncmMap = {};
+            filteredInvoices.forEach(inv => {
+                inv.items.forEach(item => {
+                    if (ncmTerm && !item.ncm.toLowerCase().includes(ncmTerm)) return;
+
+                    if (!ncmMap[item.ncm]) {
+                        ncmMap[item.ncm] = {
+                            ncm: item.ncm,
+                            totalVProd: 0,
+                            totalVIPI: 0,
+                            icmsRates: [],
+                            items: []
+                        };
+                    }
+
+                    ncmMap[item.ncm].totalVProd += item.vProd;
+                    ncmMap[item.ncm].totalVIPI += item.vIPI;
+                    if (item.pICMS > 0) ncmMap[item.ncm].icmsRates.push(item.pICMS);
+                    ncmMap[item.ncm].items.push(item);
+                });
+            });
+
+            // Render NCM Table
             const ncmTableBody = document.getElementById('ncm-table-body');
             ncmTableBody.innerHTML = '';
 
-            const noResultsState = document.getElementById('no-results-state');
-            const ncmTableSection = document.getElementById('ncm-table-section');
+            Object.values(ncmMap).forEach((group, idx) => {
+                const avgICMS = group.icmsRates.length > 0 
+                    ? group.icmsRates.reduce((a, b) => a + b, 0) / group.icmsRates.length 
+                    : 0;
 
-            if (ncmGroupList.length === 0) {
-                ncmTableSection.classList.add('hidden');
-                noResultsState.classList.remove('hidden');
-            } else {
-                noResultsState.classList.add('hidden');
-                ncmTableSection.classList.remove('hidden');
+                const trMain = document.createElement('tr');
+                trMain.className = 'hover:bg-slate-50/80 transition-colors border-b border-slate-100 cursor-pointer group';
+                trMain.onclick = () => toggleRow(`items-row-${idx}`, `icon-${idx}`);
 
-                ncmGroupList.forEach((group, index) => {
-                    const avgIcms = group.icmsRatesSet.size > 0 ? Array.from(group.icmsRatesSet).reduce((a, b) => a + b, 0) / group.icmsRatesSet.size : 0;
-                    const rowId = `ncm-row-${index}`;
-                    const isRead = readNcms.has(group.ncm);
+                trMain.innerHTML = `
+                    <td class="py-3.5 px-4 text-center text-slate-400 group-hover:text-blue-600 transition-colors">
+                        <i id="icon-${idx}" class="fa-solid fa-chevron-right text-xs transition-transform duration-200"></i>
+                    </td>
+                    <td class="py-3.5 px-4 font-bold text-slate-900">${group.ncm}</td>
+                    <td class="py-3.5 px-4 text-right font-semibold text-slate-800">${formatBRL(group.totalVProd)}</td>
+                    <td class="py-3.5 px-4 text-center">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">
+                            ${formatPercent(avgICMS)}
+                        </span>
+                    </td>
+                    <td class="py-3.5 px-4 text-right font-semibold text-slate-800">${formatBRL(group.totalVIPI)}</td>
+                `;
 
-                    const mainTr = document.createElement('tr');
-                    mainTr.id = rowId;
-                    mainTr.className = `border-b border-slate-100 hover:bg-slate-50/80 transition-colors ${isRead ? 'bg-slate-100/60 opacity-60' : ''}`;
-                    
-                    mainTr.innerHTML = `
-                        <td class="py-4 px-4 text-center">
-                            <button onclick="toggleNcmAccordion('${rowId}')" class="w-7 h-7 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 flex items-center justify-center transition-all">
-                                <i class="fa-solid fa-chevron-right text-xs transition-transform duration-200" id="${rowId}-icon"></i>
-                            </button>
-                        </td>
-                        <td class="py-4 px-4 font-semibold text-slate-800 flex items-center gap-3">
-                            <input type="checkbox" ${isRead ? 'checked' : ''} onchange="toggleReadNcm('${group.ncm}', '${rowId}')" class="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500 cursor-pointer" title="Marcar como lido">
-                            <span class="${isRead ? 'line-through text-slate-400' : ''}" id="${rowId}-text">${group.ncm}</span>
-                        </td>
-                        <td class="py-4 px-4 text-right font-medium text-slate-700 ${isRead ? 'line-through text-slate-400' : ''}">${formatBRL(group.totalValue)}</td>
-                        <td class="py-4 px-4 text-center text-slate-600 ${isRead ? 'line-through text-slate-400' : ''}">${formatPercent(avgIcms)}</td>
-                        <td class="py-4 px-4 text-right font-medium text-slate-700 ${isRead ? 'line-through text-slate-400' : ''}">${formatBRL(group.totalIpiValue)}</td>
+                const trDetails = document.createElement('tr');
+                trDetails.id = `items-row-${idx}`;
+                trDetails.className = 'hidden bg-slate-50/50';
+
+                let itemsHtml = `
+                    <td colspan="5" class="p-4">
+                        <div class="bg-white rounded-xl border border-slate-200/80 p-3 shadow-inner">
+                            <h4 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                                <i class="fa-solid fa-boxes-stacked text-blue-500"></i> Produtos com NCM ${group.ncm}
+                            </h4>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left text-xs">
+                                    <thead>
+                                        <tr class="border-b border-slate-100 text-slate-400 pb-1">
+                                            <th class="py-1 px-2">Cód.</th>
+                                            <th class="py-1 px-2">Descrição do Produto</th>
+                                            <th class="py-1 px-2">Fornecedor</th>
+                                            <th class="py-1 px-2 text-center">Qtd / Un</th>
+                                            <th class="py-1 px-2 text-right">Vl. Prod</th>
+                                            <th class="py-1 px-2 text-center">Alíq. ICMS</th>
+                                            <th class="py-1 px-2 text-center">Alíq. IPI</th>
+                                            <th class="py-1 px-2 text-right">Vl. IPI</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-slate-100">
+                `;
+
+                group.items.forEach(it => {
+                    itemsHtml += `
+                        <tr class="hover:bg-slate-50/80">
+                            <td class="py-1.5 px-2 font-mono text-slate-500">${it.cProd}</td>
+                            <td class="py-1.5 px-2 font-medium text-slate-800">${it.xProd}</td>
+                            <td class="py-1.5 px-2 text-slate-500">${it.fornecedor} <span class="text-slate-400">(NF ${it.nNF})</span></td>
+                            <td class="py-1.5 px-2 text-center text-slate-600">${it.qCom} ${it.uCom}</td>
+                            <td class="py-1.5 px-2 text-right font-medium text-slate-800">${formatBRL(it.vProd)}</td>
+                            <td class="py-1.5 px-2 text-center text-slate-600">${formatPercent(it.pICMS)}</td>
+                            <td class="py-1.5 px-2 text-center text-slate-600">${formatPercent(it.pIPI)}</td>
+                            <td class="py-1.5 px-2 text-right font-medium text-slate-800">${formatBRL(it.vIPI)}</td>
+                        </tr>
                     `;
-                    ncmTableBody.appendChild(mainTr);
-
-                    // Sub-table row containing individual product details
-                    const subTr = document.createElement('tr');
-                    subTr.id = `${rowId}-details`;
-                    subTr.className = `hidden bg-slate-50/50 border-b border-slate-100`;
-                    
-                    let subTableHtml = `
-                        <td colspan="5" class="py-3 px-6">
-                            <div class="bg-white border border-slate-200/80 rounded-xl p-3 shadow-inner my-2">
-                                <p class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Itens detalhados para o NCM: ${group.ncm}</p>
-                                <div class="overflow-x-auto max-h-48">
-                                    <table class="w-full text-xs text-left">
-                                        <thead>
-                                            <tr class="text-slate-400 border-b border-slate-100 pb-1">
-                                                <th class="py-1.5 px-2">NF</th>
-                                                <th class="py-1.5 px-2">Fornecedor</th>
-                                                <th class="py-1.5 px-2">Código</th>
-                                                <th class="py-1.5 px-2">Descrição do Produto</th>
-                                                <th class="py-1.5 px-2 text-right">Qtd</th>
-                                                <th class="py-1.5 px-2 text-right">V. Prod</th>
-                                                <th class="py-1.5 px-2 text-center">ICMS%</th>
-                                                <th class="py-1.5 px-2 text-right">V. IPI</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody class="divide-y divide-slate-100 text-slate-700">
-                    `;
-
-                    group.items.forEach(item => {
-                        subTableHtml += `
-                            <tr>
-                                <td class="py-1.5 px-2 font-medium">${item.nNF}</td>
-                                <td class="py-1.5 px-2 truncate max-w-[120px]" title="${item.fornecedor}">${item.fornecedor}</td>
-                                <td class="py-1.5 px-2 font-mono text-slate-500">${item.cProd}</td>
-                                <td class="py-1.5 px-2">${item.xProd}</td>
-                                <td class="py-1.5 px-2 text-right">${item.qCom} ${item.uCom}</td>
-                                <td class="py-1.5 px-2 text-right font-medium">${formatBRL(item.vProd)}</td>
-                                <td class="py-1.5 px-2 text-center">${formatPercent(item.pICMS)}</td>
-                                <td class="py-1.5 px-2 text-right">${formatBRL(item.vIPI)}</td>
-                            </tr>
-                        `;
-                    });
-
-                    subTableHtml += `
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </td>
-                    `;
-                    subTr.innerHTML = subTableHtml;
-                    ncmTableBody.appendChild(subTr);
                 });
-            }
 
-            // Update active filter tags display
-            const tagContainer = document.getElementById('active-filter-tags');
-            tagContainer.innerHTML = '';
-            let activeCount = 0;
+                itemsHtml += `
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </td>
+                `;
 
-            if (dateFrom) { addTag(`De: ${dateFrom}`); activeCount++; }
-            if (dateTo) { addTag(`Até: ${dateTo}`); activeCount++; }
-            if (selectedCity) { addTag(`Local: ${document.getElementById('filter-city').options[document.getElementById('filter-city').selectedIndex].text}`); activeCount++; }
-            if (searchVal) { addTag(`Busca: "${searchVal}"`); activeCount++; }
-            if (ncmVal) { addTag(`NCM: "${ncmVal}"`); activeCount++; }
+                trDetails.innerHTML = itemsHtml;
 
-            document.getElementById('filter-matches-text').innerHTML = `Exibindo dados de <strong class="text-slate-800">${filteredInvoices.length}</strong> nota(s) fiscal(is) (${totalMatchingItemsCount} itens de NCM).`;
+                ncmTableBody.appendChild(trMain);
+                ncmTableBody.appendChild(trDetails);
+            });
         }
 
-        function addTag(text) {
-            const span = document.createElement('span');
-            span.className = 'px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md font-medium text-[11px] border border-slate-200 flex items-center gap-1';
-            span.innerHTML = `<i class="fa-solid fa-tag text-[9px] text-blue-500"></i> ${text}`;
-            document.getElementById('active-filter-tags').appendChild(span);
-        }
+        function toggleRow(rowId, iconId) {
+            const row = document.getElementById(rowId);
+            const icon = document.getElementById(iconId);
 
-        function toggleNcmAccordion(rowId) {
-            const detailsRow = document.getElementById(`${rowId}-details`);
-            const icon = document.getElementById(`${rowId}-icon`);
-            if (detailsRow.classList.contains('hidden')) {
-                detailsRow.classList.remove('hidden');
+            if (row.classList.contains('hidden')) {
+                row.classList.remove('hidden');
                 icon.classList.add('rotate-90');
             } else {
-                detailsRow.classList.add('hidden');
+                row.classList.add('hidden');
                 icon.classList.remove('rotate-90');
-            }
-        }
-
-        function toggleReadNcm(ncm, rowId) {
-            const mainTr = document.getElementById(rowId);
-            const textSpan = document.getElementById(`${rowId}-text`);
-            const checkboxes = mainTr.querySelectorAll('input[type="checkbox"]');
-            const isChecked = checkboxes[0].checked;
-
-            if (isChecked) {
-                readNcms.add(ncm);
-                mainTr.classList.add('bg-slate-100/60', 'opacity-60');
-                textSpan.classList.add('line-through', 'text-slate-400');
-                // Apply line-through to neighbor text cells as well
-                mainTr.querySelectorAll('td').forEach((td, idx) => {
-                    if (idx > 1) td.classList.add('line-through', 'text-slate-400');
-                });
-            } else {
-                readNcms.delete(ncm);
-                mainTr.classList.remove('bg-slate-100/60', 'opacity-60');
-                textSpan.classList.remove('line-through', 'text-slate-400');
-                mainTr.querySelectorAll('td').forEach((td, idx) => {
-                    if (idx > 1) td.classList.remove('line-through', 'text-slate-400');
-                });
             }
         }
     </script>
